@@ -42,6 +42,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 
 	// 写入新的 response body
 	service.IOCopyBytesGracefully(c, resp, responseBody)
+	service.RecordConversationResponse(c, info, service.ExtractOutputTextFromResponses(&responsesResponse))
 
 	// compute usage
 	usage := dto.Usage{}
@@ -145,6 +146,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	}
 
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	service.RecordConversationResponse(c, info, responseTextBuilder.String())
 
 	return usage, nil
 }

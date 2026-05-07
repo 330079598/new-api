@@ -179,6 +179,7 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	if err := processTokens(info.RelayMode, streamItems, &responseTextBuilder, &toolCount); err != nil {
 		logger.LogError(c, "error processing tokens: "+err.Error())
 	}
+	service.RecordConversationResponse(c, info, responseTextBuilder.String())
 
 	if !containStreamUsage {
 		usage = service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
@@ -258,6 +259,7 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 
 	applyUsagePostProcessing(info, &simpleResponse.Usage, responseBody)
+	service.RecordConversationResponse(c, info, openAITextResponseContent(&simpleResponse))
 
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:
@@ -297,6 +299,23 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	return &simpleResponse.Usage, nil
+}
+
+func openAITextResponseContent(response *dto.OpenAITextResponse) string {
+	if response == nil || len(response.Choices) == 0 {
+		return ""
+	}
+	texts := make([]string, 0, len(response.Choices))
+	for _, choice := range response.Choices {
+		content := choice.Message.StringContent()
+		if reasoning := choice.Message.GetReasoningContent(); reasoning != "" {
+			content += reasoning
+		}
+		if content != "" {
+			texts = append(texts, content)
+		}
+	}
+	return strings.Join(texts, "\n")
 }
 
 func streamTTSResponse(c *gin.Context, resp *http.Response) {

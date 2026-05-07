@@ -28,8 +28,22 @@ func ShouldRecordConversationLog(info *relaycommon.RelayInfo) bool {
 	}
 }
 
+func safeChannelId(info *relaycommon.RelayInfo) int {
+	if info != nil && info.ChannelMeta != nil {
+		return info.ChannelMeta.ChannelId
+	}
+	return 0
+}
+
+func safeUpstreamModelName(info *relaycommon.RelayInfo) string {
+	if info != nil && info.ChannelMeta != nil {
+		return info.ChannelMeta.UpstreamModelName
+	}
+	return ""
+}
+
 func RecordConversationRequest(ctx *gin.Context, info *relaycommon.RelayInfo, request dto.Request) {
-	if !ShouldRecordConversationLog(info) || request == nil {
+	if info == nil || request == nil {
 		return
 	}
 	requestBytes, err := common.Marshal(request)
@@ -53,7 +67,7 @@ func RecordConversationRequest(ctx *gin.Context, info *relaycommon.RelayInfo, re
 		TokenId:        info.TokenId,
 		TokenName:      contextString(ctx, "token_name"),
 		ModelName:      info.OriginModelName,
-		ChannelId:      info.ChannelId,
+		ChannelId:      safeChannelId(info),
 		Group:          info.UsingGroup,
 		RelayFormat:    string(info.RelayFormat),
 		RequestPath:    requestPath,
@@ -63,13 +77,13 @@ func RecordConversationRequest(ctx *gin.Context, info *relaycommon.RelayInfo, re
 }
 
 func RecordConversationResponse(ctx *gin.Context, info *relaycommon.RelayInfo, responseContent string) {
-	if !ShouldRecordConversationLog(info) {
+	if info == nil {
 		return
 	}
 	model.UpdateConversationLog(model.UpdateConversationLogParams{
 		RequestId:       info.RequestId,
-		ChannelId:       info.ChannelId,
-		ModelName:       info.UpstreamModelName,
+		ChannelId:       safeChannelId(info),
+		ModelName:       safeUpstreamModelName(info),
 		IsStream:        info.IsStream,
 		Status:          model.ConversationLogStatusSuccess,
 		ResponseContent: truncateConversationContent(responseContent),
@@ -77,13 +91,13 @@ func RecordConversationResponse(ctx *gin.Context, info *relaycommon.RelayInfo, r
 }
 
 func RecordConversationError(ctx *gin.Context, info *relaycommon.RelayInfo, apiErr *types.NewAPIError) {
-	if !ShouldRecordConversationLog(info) || apiErr == nil {
+	if info == nil || apiErr == nil {
 		return
 	}
 	model.UpdateConversationLog(model.UpdateConversationLogParams{
 		RequestId:    info.RequestId,
-		ChannelId:    info.ChannelId,
-		ModelName:    info.UpstreamModelName,
+		ChannelId:    safeChannelId(info),
+		ModelName:    safeUpstreamModelName(info),
 		IsStream:     info.IsStream,
 		Status:       model.ConversationLogStatusError,
 		ErrorMessage: truncateConversationContent(apiErr.MaskSensitiveErrorWithStatusCode()),

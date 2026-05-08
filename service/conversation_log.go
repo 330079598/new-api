@@ -2,7 +2,6 @@ package service
 
 import (
 	"strings"
-	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -14,7 +13,26 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const conversationLogMaxContentRunes = 20000
+const conversationLogQueueSize = 10000
+
+var conversationLogQueue = make(chan func(), conversationLogQueueSize)
+
+func init() {
+	go consumeConversationLogQueue()
+}
+
+func consumeConversationLogQueue() {
+	for job := range conversationLogQueue {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					common.SysLog("conversation log async job panic")
+				}
+			}()
+			job()
+		}()
+	}
+}
 
 func ShouldRecordConversationLog(info *relaycommon.RelayInfo) bool {
 	if info == nil {
@@ -60,7 +78,7 @@ func RecordConversationRequest(ctx *gin.Context, info *relaycommon.RelayInfo, re
 			requestPath = requestPath[:idx]
 		}
 	}
-	model.RecordConversationLog(model.RecordConversationLogParams{
+	params := model.RecordConversationLogParams{
 		RequestId:      info.RequestId,
 		UserId:         info.UserId,
 		Username:       contextString(ctx, "username"),
@@ -72,7 +90,10 @@ func RecordConversationRequest(ctx *gin.Context, info *relaycommon.RelayInfo, re
 		RelayFormat:    string(info.RelayFormat),
 		RequestPath:    requestPath,
 		IsStream:       info.IsStream,
-		RequestContent: truncateConversationContent(string(requestBytes)),
+		RequestContent: string(requestBytes),
+	}
+	enqueueConversationLog(func() {
+		model.RecordConversationLog(params)
 	})
 }
 
@@ -80,13 +101,16 @@ func RecordConversationResponse(ctx *gin.Context, info *relaycommon.RelayInfo, r
 	if info == nil {
 		return
 	}
-	model.UpdateConversationLog(model.UpdateConversationLogParams{
+	params := model.UpdateConversationLogParams{
 		RequestId:       info.RequestId,
 		ChannelId:       safeChannelId(info),
 		ModelName:       safeUpstreamModelName(info),
 		IsStream:        info.IsStream,
 		Status:          model.ConversationLogStatusSuccess,
-		ResponseContent: truncateConversationContent(responseContent),
+		ResponseContent: responseContent,
+	}
+	enqueueConversationLog(func() {
+		model.UpdateConversationLog(params)
 	})
 }
 
@@ -94,14 +118,25 @@ func RecordConversationError(ctx *gin.Context, info *relaycommon.RelayInfo, apiE
 	if info == nil || apiErr == nil {
 		return
 	}
-	model.UpdateConversationLog(model.UpdateConversationLogParams{
+	params := model.UpdateConversationLogParams{
 		RequestId:    info.RequestId,
 		ChannelId:    safeChannelId(info),
 		ModelName:    safeUpstreamModelName(info),
 		IsStream:     info.IsStream,
 		Status:       model.ConversationLogStatusError,
-		ErrorMessage: truncateConversationContent(apiErr.MaskSensitiveErrorWithStatusCode()),
+		ErrorMessage: apiErr.MaskSensitiveErrorWithStatusCode(),
+	}
+	enqueueConversationLog(func() {
+		model.UpdateConversationLog(params)
 	})
+}
+
+func enqueueConversationLog(job func()) {
+	select {
+	case conversationLogQueue <- job:
+	default:
+		common.SysLog("conversation log queue is full, drop async job")
+	}
 }
 
 func contextString(ctx *gin.Context, key string) string {
@@ -109,12 +144,4 @@ func contextString(ctx *gin.Context, key string) string {
 		return ""
 	}
 	return ctx.GetString(key)
-}
-
-func truncateConversationContent(content string) string {
-	if utf8.RuneCountInString(content) <= conversationLogMaxContentRunes {
-		return content
-	}
-	runes := []rune(content)
-	return string(runes[:conversationLogMaxContentRunes]) + "\n...[truncated]"
 }

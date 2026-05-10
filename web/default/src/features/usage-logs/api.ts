@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 import { buildQueryParams } from './lib/utils'
 import type {
+  ConversationLog,
   GetLogsParams,
   GetLogsResponse,
   GetLogStatsParams,
@@ -109,3 +110,18 @@ export const getAllTaskLogs = (params: GetTaskLogsParams) =>
 
 export const getUserTaskLogs = (params: GetTaskLogsParams) =>
   fetchLogs('/api/task', params, false)
+
+// ============================================================================
+// Conversation Log API
+// ============================================================================
+
+export async function getConversationLog(
+  requestId: string
+): Promise<{
+  success: boolean
+  message?: string
+  data?: ConversationLog
+}> {
+  const res = await api.get(`/api/log/conversation?request_id=${requestId}`)
+  return res.data
+}

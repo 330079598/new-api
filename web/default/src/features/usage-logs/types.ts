@@ -357,3 +357,24 @@ export interface UserInfo {
   aff_quota?: number
   remark?: string
 }
+
+export interface ConversationLog {
+  id: number
+  request_id: string
+  user_id: number
+  username: string
+  token_id: number
+  token_name: string
+  model_name: string
+  channel_id: number
+  group: string
+  relay_format: string
+  request_path: string
+  is_stream: boolean
+  status: string
+  request_content: string
+  response_content: string
+  error_message: string
+  created_at: number
+  updated_at: number
+}

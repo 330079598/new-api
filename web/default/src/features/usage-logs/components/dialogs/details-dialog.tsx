@@ -503,44 +503,47 @@ function getRoleStyle(role: string) {
 interface MessageBubbleProps {
   message: ChatMessage
   index: number
-  forceExpanded?: boolean
 }
 
-function MessageBubble({ message, index, forceExpanded }: MessageBubbleProps) {
-  const [expanded, setExpanded] = useState(true)
+function MessageBubble({ message, index }: MessageBubbleProps) {
+  const [collapsed, setCollapsed] = useState(false)
   const style = getRoleStyle(message.role)
   const text = getContentText(message.content)
-  const isLong = text.length > 400
-  const isExpanded = forceExpanded || expanded
-  const displayText = !isExpanded && isLong ? `${text.slice(0, 400)}…` : text
 
   return (
-    <div className={cn('min-w-0 overflow-hidden rounded-md border p-2', style.bubble)}>
-      <div className='mb-1.5 flex items-center justify-between gap-2'>
+    <div className={cn('min-w-0 overflow-hidden rounded-md border', style.bubble)}>
+      <div className='flex min-w-0 items-center gap-1.5 px-2 py-1.5'>
+        <button
+          type='button'
+          className='text-muted-foreground hover:text-foreground flex shrink-0 cursor-pointer items-center transition-colors'
+          onClick={() => setCollapsed((v) => !v)}
+          aria-label={collapsed ? 'Expand' : 'Collapse'}
+        >
+          <ChevronRight
+            className={cn('size-3 transition-transform', !collapsed && 'rotate-90')}
+          />
+        </button>
         <span
           className={cn(
-            'inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold',
+            'inline-flex shrink-0 cursor-pointer items-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold',
             style.badge
           )}
+          onClick={() => setCollapsed((v) => !v)}
         >
           {style.label || message.role}
           <span className='text-[9px] opacity-50 ml-1'>#{index + 1}</span>
         </span>
-        {isLong && !forceExpanded && (
-          <button
-            type='button'
-            className='text-muted-foreground hover:text-foreground flex items-center gap-0.5 text-[10px] transition-colors'
-            onClick={() => setExpanded((v) => !v)}
-          >
-            <ChevronRight
-              className={cn('size-3 transition-transform', expanded && 'rotate-90')}
-            />
-          </button>
+        {collapsed && text && (
+          <span className='text-muted-foreground min-w-0 truncate font-mono text-[10px]'>
+            {text.slice(0, 80).replace(/\n/g, ' ')}
+          </span>
         )}
       </div>
-      <p className='min-w-0 text-xs leading-relaxed break-words whitespace-pre-wrap'>
-        {displayText}
-      </p>
+      {!collapsed && (
+        <p className='min-w-0 px-2 pb-2 text-xs leading-relaxed break-words whitespace-pre-wrap'>
+          {text}
+        </p>
+      )}
     </div>
   )
 }
@@ -592,24 +595,38 @@ function RequestParams({ params }: RequestParamsProps) {
 interface RequestContentViewProps {
   raw: string
   expanded?: boolean
+  collapsible?: boolean
 }
 
-function RequestContentView({ raw, expanded }: RequestContentViewProps) {
+function RequestContentView({ raw, expanded, collapsible }: RequestContentViewProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
+  const [collapsed, setCollapsed] = useState(false)
   const parsed = parseRequestMessages(raw)
 
   return (
     <div className='space-y-1'>
       <div className='flex items-center justify-between'>
-        <span className='text-muted-foreground text-[11px] font-semibold'>
+        <button
+          type='button'
+          className={cn(
+            'flex items-center gap-1 text-[11px] font-semibold',
+            collapsible
+              ? 'text-muted-foreground hover:text-foreground cursor-pointer transition-colors'
+              : 'text-muted-foreground cursor-default'
+          )}
+          onClick={collapsible ? () => setCollapsed((v) => !v) : undefined}
+        >
+          {collapsible && (
+            <ChevronRight className={cn('size-3 transition-transform pointer-events-none', !collapsed && 'rotate-90')} />
+          )}
           {t('Request')}
           {parsed && (
-            <span className='text-muted-foreground/60 ml-1 font-normal'>
+            <span className='text-muted-foreground/60 font-normal'>
               · {parsed.messages.length} {t('Messages')}
             </span>
           )}
-        </span>
+        </button>
         <Button
           variant='ghost'
           size='sm'
@@ -626,17 +643,19 @@ function RequestContentView({ raw, expanded }: RequestContentViewProps) {
         </Button>
       </div>
 
-      {parsed ? (
-        <div className='space-y-1.5'>
-          {parsed.messages.map((msg, i) => (
-            <MessageBubble key={i} message={msg} index={i} forceExpanded={expanded} />
-          ))}
-          <RequestParams params={parsed.params} />
-        </div>
-      ) : (
-        <pre className={cn('bg-background/60 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap', !expanded && 'max-h-60')}>
-          {raw}
-        </pre>
+      {!collapsed && (
+        parsed ? (
+          <div className='space-y-1.5'>
+            {parsed.messages.map((msg, i) => (
+              <MessageBubble key={i} message={msg} index={i} />
+            ))}
+            <RequestParams params={parsed.params} />
+          </div>
+        ) : (
+          <pre className={cn('bg-background/60 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap', !expanded && 'max-h-60')}>
+            {raw}
+          </pre>
+        )
       )}
     </div>
   )
@@ -645,18 +664,32 @@ function RequestContentView({ raw, expanded }: RequestContentViewProps) {
 interface ResponseContentViewProps {
   raw: string
   expanded?: boolean
+  collapsible?: boolean
 }
 
-function ResponseContentView({ raw, expanded }: ResponseContentViewProps) {
+function ResponseContentView({ raw, expanded, collapsible }: ResponseContentViewProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
+  const [collapsed, setCollapsed] = useState(false)
 
   return (
     <div className='space-y-1'>
       <div className='flex items-center justify-between'>
-        <span className='text-muted-foreground text-[11px] font-semibold'>
+        <button
+          type='button'
+          className={cn(
+            'flex items-center gap-1 text-[11px] font-semibold',
+            collapsible
+              ? 'text-muted-foreground hover:text-foreground cursor-pointer transition-colors'
+              : 'text-muted-foreground cursor-default'
+          )}
+          onClick={collapsible ? () => setCollapsed((v) => !v) : undefined}
+        >
+          {collapsible && (
+            <ChevronRight className={cn('size-3 transition-transform pointer-events-none', !collapsed && 'rotate-90')} />
+          )}
           {t('Response')}
-        </span>
+        </button>
         <Button
           variant='ghost'
           size='sm'
@@ -672,11 +705,13 @@ function ResponseContentView({ raw, expanded }: ResponseContentViewProps) {
           )}
         </Button>
       </div>
-      <div className={cn('bg-background/60 overflow-y-auto rounded border p-3 text-xs leading-relaxed', !expanded && 'max-h-96')}>
-        <Response className='[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:text-[11px] [&_code]:text-[11px] [&_p]:text-xs [&_li]:text-xs [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs'>
-          {raw}
-        </Response>
-      </div>
+      {!collapsed && (
+        <div className={cn('bg-background/60 overflow-y-auto rounded border p-3 text-xs leading-relaxed', !expanded && 'max-h-96')}>
+          <Response className='[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:text-[11px] [&_code]:text-[11px] [&_p]:text-xs [&_li]:text-xs [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs'>
+            {raw}
+          </Response>
+        </div>
+      )}
     </div>
   )
 }
@@ -728,10 +763,10 @@ function ConversationExpandDialog(props: {
         <div className='min-h-0 flex-1 overflow-y-auto'>
           <div className='space-y-4 p-5'>
             {data.request_content && (
-              <RequestContentView raw={data.request_content} expanded />
+              <RequestContentView raw={data.request_content} expanded collapsible />
             )}
             {data.response_content && (
-              <ResponseContentView raw={data.response_content} expanded />
+              <ResponseContentView raw={data.response_content} expanded collapsible />
             )}
             {data.error_message && (
               <div className='space-y-1.5'>

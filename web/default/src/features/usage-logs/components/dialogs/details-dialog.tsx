@@ -32,6 +32,7 @@ import {
   ChevronDown,
   MessageSquare,
   Loader2,
+  ChevronRight,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -47,6 +48,7 @@ import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { Response } from '@/components/ai-elements/response'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -403,6 +405,279 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
   )
 }
 
+// ── Conversation helpers ──────────────────────────────────────────────────
+
+interface ChatMessage {
+  role: string
+  content: unknown
+}
+
+/**
+ * Try to parse request_content as a chat-completions JSON body and extract
+ * the messages array. Returns null when the content is not parseable or has
+ * no messages field.
+ */
+function parseRequestMessages(raw: string): {
+  messages: ChatMessage[]
+  params: Record<string, unknown>
+} | null {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (!parsed || typeof parsed !== 'object') return null
+    const messages = parsed.messages
+    if (!Array.isArray(messages)) return null
+    const params: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(parsed)) {
+      if (k !== 'messages') params[k] = v
+    }
+    return { messages: messages as ChatMessage[], params }
+  } catch {
+    return null
+  }
+}
+
+/** Extract a plain-text preview from a message content (string or parts array). */
+function getContentText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part
+        if (part && typeof part === 'object') {
+          const p = part as Record<string, unknown>
+          if (p.type === 'text' && typeof p.text === 'string') return p.text
+          if (p.type === 'image_url') return '[image]'
+          if (p.type === 'image') return '[image]'
+          if (p.type === 'file') return '[file]'
+          if (p.type === 'input_audio') return '[audio]'
+        }
+        return ''
+      })
+      .filter(Boolean)
+      .join('\n')
+  }
+  return ''
+}
+
+const ROLE_STYLES: Record<
+  string,
+  { label: string; badge: string; bubble: string }
+> = {
+  system: {
+    label: 'System',
+    badge:
+      'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300',
+    bubble: 'bg-violet-50/60 border-violet-200/60 dark:bg-violet-950/20 dark:border-violet-900/40',
+  },
+  user: {
+    label: 'User',
+    badge:
+      'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300',
+    bubble: 'bg-blue-50/40 border-blue-200/50 dark:bg-blue-950/15 dark:border-blue-900/30',
+  },
+  assistant: {
+    label: 'Assistant',
+    badge:
+      'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300',
+    bubble: 'bg-emerald-50/40 border-emerald-200/50 dark:bg-emerald-950/15 dark:border-emerald-900/30',
+  },
+  tool: {
+    label: 'Tool',
+    badge:
+      'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300',
+    bubble: 'bg-amber-50/40 border-amber-200/50 dark:bg-amber-950/15 dark:border-amber-900/30',
+  },
+}
+
+const DEFAULT_ROLE_STYLE = {
+  label: '',
+  badge: 'border-border bg-muted/40 text-muted-foreground',
+  bubble: 'bg-muted/30 border-border/60',
+}
+
+function getRoleStyle(role: string) {
+  return ROLE_STYLES[role] ?? { ...DEFAULT_ROLE_STYLE, label: role }
+}
+
+interface MessageBubbleProps {
+  message: ChatMessage
+  index: number
+}
+
+function MessageBubble({ message, index }: MessageBubbleProps) {
+  const [expanded, setExpanded] = useState(true)
+  const style = getRoleStyle(message.role)
+  const text = getContentText(message.content)
+  const isLong = text.length > 400
+  const displayText = !expanded && isLong ? `${text.slice(0, 400)}…` : text
+
+  return (
+    <div className={cn('min-w-0 overflow-hidden rounded-md border p-2', style.bubble)}>
+      <div className='mb-1.5 flex items-center justify-between gap-2'>
+        <span
+          className={cn(
+            'inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold',
+            style.badge
+          )}
+        >
+          {style.label || message.role}
+          <span className='text-[9px] opacity-50 ml-1'>#{index + 1}</span>
+        </span>
+        {isLong && (
+          <button
+            type='button'
+            className='text-muted-foreground hover:text-foreground flex items-center gap-0.5 text-[10px] transition-colors'
+            onClick={() => setExpanded((v) => !v)}
+          >
+            <ChevronRight
+              className={cn('size-3 transition-transform', expanded && 'rotate-90')}
+            />
+          </button>
+        )}
+      </div>
+      <p className='min-w-0 text-xs leading-relaxed break-words whitespace-pre-wrap'>
+        {displayText}
+      </p>
+    </div>
+  )
+}
+
+interface RequestParamsProps {
+  params: Record<string, unknown>
+}
+
+function RequestParams({ params }: RequestParamsProps) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const entries = Object.entries(params).filter(
+    ([, v]) => v !== undefined && v !== null
+  )
+  if (entries.length === 0) return null
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className='flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors'>
+        <ChevronRight
+          className={cn('size-3 transition-transform', open && 'rotate-90')}
+        />
+        {t('Parameters')} ({entries.length})
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className='bg-background/60 mt-1 overflow-x-auto rounded border p-2'>
+          <table className='w-full text-[11px]'>
+            <tbody>
+              {entries.map(([k, v]) => (
+                <tr key={k} className='align-top'>
+                  <td className='text-muted-foreground pr-3 pb-0.5 font-mono whitespace-nowrap'>
+                    {k}
+                  </td>
+                  <td className='text-foreground pb-0.5 font-mono break-all'>
+                    {typeof v === 'object'
+                      ? JSON.stringify(v)
+                      : String(v)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+interface RequestContentViewProps {
+  raw: string
+}
+
+function RequestContentView({ raw }: RequestContentViewProps) {
+  const { t } = useTranslation()
+  const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
+  const parsed = parseRequestMessages(raw)
+
+  return (
+    <div className='space-y-1'>
+      <div className='flex items-center justify-between'>
+        <span className='text-muted-foreground text-[11px] font-semibold'>
+          {t('Request')}
+          {parsed && (
+            <span className='text-muted-foreground/60 ml-1 font-normal'>
+              · {parsed.messages.length} {t('Messages')}
+            </span>
+          )}
+        </span>
+        <Button
+          variant='ghost'
+          size='sm'
+          className='h-5 w-5 p-0'
+          onClick={() => copyToClipboard(raw)}
+          title={t('Copy')}
+          aria-label={t('Copy')}
+        >
+          {copiedText === raw ? (
+            <Check className='size-3 text-green-600' />
+          ) : (
+            <Copy className='size-3' />
+          )}
+        </Button>
+      </div>
+
+      {parsed ? (
+        <div className='space-y-1.5'>
+          {parsed.messages.map((msg, i) => (
+            <MessageBubble key={i} message={msg} index={i} />
+          ))}
+          <RequestParams params={parsed.params} />
+        </div>
+      ) : (
+        <pre className='bg-background/60 max-h-60 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap'>
+          {raw}
+        </pre>
+      )}
+    </div>
+  )
+}
+
+interface ResponseContentViewProps {
+  raw: string
+}
+
+function ResponseContentView({ raw }: ResponseContentViewProps) {
+  const { t } = useTranslation()
+  const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
+
+  return (
+    <div className='space-y-1'>
+      <div className='flex items-center justify-between'>
+        <span className='text-muted-foreground text-[11px] font-semibold'>
+          {t('Response')}
+        </span>
+        <Button
+          variant='ghost'
+          size='sm'
+          className='h-5 w-5 p-0'
+          onClick={() => copyToClipboard(raw)}
+          title={t('Copy')}
+          aria-label={t('Copy')}
+        >
+          {copiedText === raw ? (
+            <Check className='size-3 text-green-600' />
+          ) : (
+            <Copy className='size-3' />
+          )}
+        </Button>
+      </div>
+      <div className='bg-background/60 max-h-96 overflow-y-auto rounded border p-3 text-xs leading-relaxed'>
+        <Response className='[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:text-[11px] [&_code]:text-[11px] [&_p]:text-xs [&_li]:text-xs [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs'>
+          {raw}
+        </Response>
+      </div>
+    </div>
+  )
+}
+
+// ── ConversationSection ───────────────────────────────────────────────────
+
 function ConversationSection(props: { requestId: string }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -434,7 +709,7 @@ function ConversationSection(props: { requestId: string }) {
         </span>
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className='bg-muted/30 mt-1.5 min-w-0 space-y-2 overflow-hidden rounded-md border p-2.5'>
+        <div className='bg-muted/30 mt-1.5 min-w-0 space-y-2.5 overflow-hidden rounded-md border p-2.5'>
           {isLoading && (
             <div className='text-muted-foreground flex items-center gap-2 text-xs'>
               <Loader2 className='size-3 animate-spin' />
@@ -471,24 +746,10 @@ function ConversationSection(props: { requestId: string }) {
                 )}
               </div>
               {data.request_content && (
-                <div className='space-y-1'>
-                  <span className='text-muted-foreground text-[11px] font-semibold'>
-                    {t('Request')}
-                  </span>
-                  <pre className='bg-background/60 max-h-60 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap'>
-                    {data.request_content}
-                  </pre>
-                </div>
+                <RequestContentView raw={data.request_content} />
               )}
               {data.response_content && (
-                <div className='space-y-1'>
-                  <span className='text-muted-foreground text-[11px] font-semibold'>
-                    {t('Response')}
-                  </span>
-                  <pre className='bg-background/60 max-h-60 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap'>
-                    {data.response_content}
-                  </pre>
-                </div>
+                <ResponseContentView raw={data.response_content} />
               )}
               {data.error_message && (
                 <div className='space-y-1'>

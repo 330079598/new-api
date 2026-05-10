@@ -32,8 +32,10 @@ export function ApiKeysDialogs() {
 
   useEffect(() => {
     if (open === 'create') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLastMutateSide('left')
     } else if (open === 'update') {
+       
       setLastMutateSide('right')
     }
   }, [open])

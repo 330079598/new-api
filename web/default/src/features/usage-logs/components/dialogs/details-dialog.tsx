@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   Copy,
   Check,
@@ -35,22 +37,17 @@ import {
   ChevronRight,
   Maximize2,
 } from 'lucide-react'
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { formatBillingCurrencyFromUSD } from '@/lib/currency'
+import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
+import { cn } from '@/lib/utils'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { Button } from '@/components/ui/button'
 import {
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
 } from '@/components/ui/collapsible'
-import { getConversationLog } from '../../api'
-import type { ConversationLog } from '../../types'
-import { formatBillingCurrencyFromUSD } from '@/lib/currency'
-import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
-import { cn } from '@/lib/utils'
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { Response } from '@/components/ai-elements/response'
-import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -60,8 +57,10 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Response } from '@/components/ai-elements/response'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
+import { getConversationLog } from '../../api'
 import type { UsageLog } from '../../data/schema'
 import {
   parseLogOther,
@@ -79,7 +78,7 @@ import {
   isPerCallBilling,
   isTimingLogType,
 } from '../../lib/utils'
-import type { LogOtherData } from '../../types'
+import type { ConversationLog, LogOtherData } from '../../types'
 
 function timingTextColorClass(
   variant: 'success' | 'warning' | 'danger'
@@ -468,25 +467,29 @@ const ROLE_STYLES: Record<
     label: 'System',
     badge:
       'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300',
-    bubble: 'bg-violet-50/60 border-violet-200/60 dark:bg-violet-950/20 dark:border-violet-900/40',
+    bubble:
+      'bg-violet-50/60 border-violet-200/60 dark:bg-violet-950/20 dark:border-violet-900/40',
   },
   user: {
     label: 'User',
     badge:
       'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300',
-    bubble: 'bg-blue-50/40 border-blue-200/50 dark:bg-blue-950/15 dark:border-blue-900/30',
+    bubble:
+      'bg-blue-50/40 border-blue-200/50 dark:bg-blue-950/15 dark:border-blue-900/30',
   },
   assistant: {
     label: 'Assistant',
     badge:
       'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300',
-    bubble: 'bg-emerald-50/40 border-emerald-200/50 dark:bg-emerald-950/15 dark:border-emerald-900/30',
+    bubble:
+      'bg-emerald-50/40 border-emerald-200/50 dark:bg-emerald-950/15 dark:border-emerald-900/30',
   },
   tool: {
     label: 'Tool',
     badge:
       'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300',
-    bubble: 'bg-amber-50/40 border-amber-200/50 dark:bg-amber-950/15 dark:border-amber-900/30',
+    bubble:
+      'bg-amber-50/40 border-amber-200/50 dark:bg-amber-950/15 dark:border-amber-900/30',
   },
 }
 
@@ -511,7 +514,9 @@ function MessageBubble({ message, index }: MessageBubbleProps) {
   const text = getContentText(message.content)
 
   return (
-    <div className={cn('min-w-0 overflow-hidden rounded-md border', style.bubble)}>
+    <div
+      className={cn('min-w-0 overflow-hidden rounded-md border', style.bubble)}
+    >
       <div className='flex min-w-0 items-center gap-1.5 px-2 py-1.5'>
         <button
           type='button'
@@ -520,7 +525,10 @@ function MessageBubble({ message, index }: MessageBubbleProps) {
           aria-label={collapsed ? 'Expand' : 'Collapse'}
         >
           <ChevronRight
-            className={cn('size-3 transition-transform', !collapsed && 'rotate-90')}
+            className={cn(
+              'size-3 transition-transform',
+              !collapsed && 'rotate-90'
+            )}
           />
         </button>
         <span
@@ -531,7 +539,7 @@ function MessageBubble({ message, index }: MessageBubbleProps) {
           onClick={() => setCollapsed((v) => !v)}
         >
           {style.label || message.role}
-          <span className='text-[9px] opacity-50 ml-1'>#{index + 1}</span>
+          <span className='ml-1 text-[9px] opacity-50'>#{index + 1}</span>
         </span>
         {collapsed && text && (
           <span className='text-muted-foreground min-w-0 truncate font-mono text-[10px]'>
@@ -562,7 +570,7 @@ function RequestParams({ params }: RequestParamsProps) {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className='flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors'>
+      <CollapsibleTrigger className='text-muted-foreground hover:text-foreground flex items-center gap-1 text-[10px] transition-colors'>
         <ChevronRight
           className={cn('size-3 transition-transform', open && 'rotate-90')}
         />
@@ -578,9 +586,7 @@ function RequestParams({ params }: RequestParamsProps) {
                     {k}
                   </td>
                   <td className='text-foreground pb-0.5 font-mono break-all'>
-                    {typeof v === 'object'
-                      ? JSON.stringify(v)
-                      : String(v)}
+                    {typeof v === 'object' ? JSON.stringify(v) : String(v)}
                   </td>
                 </tr>
               ))}
@@ -598,7 +604,11 @@ interface RequestContentViewProps {
   collapsible?: boolean
 }
 
-function RequestContentView({ raw, expanded, collapsible }: RequestContentViewProps) {
+function RequestContentView({
+  raw,
+  expanded,
+  collapsible,
+}: RequestContentViewProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const [collapsed, setCollapsed] = useState(false)
@@ -618,7 +628,12 @@ function RequestContentView({ raw, expanded, collapsible }: RequestContentViewPr
           onClick={collapsible ? () => setCollapsed((v) => !v) : undefined}
         >
           {collapsible && (
-            <ChevronRight className={cn('size-3 transition-transform pointer-events-none', !collapsed && 'rotate-90')} />
+            <ChevronRight
+              className={cn(
+                'pointer-events-none size-3 transition-transform',
+                !collapsed && 'rotate-90'
+              )}
+            />
           )}
           {t('Request')}
           {parsed && (
@@ -643,8 +658,8 @@ function RequestContentView({ raw, expanded, collapsible }: RequestContentViewPr
         </Button>
       </div>
 
-      {!collapsed && (
-        parsed ? (
+      {!collapsed &&
+        (parsed ? (
           <div className='space-y-1.5'>
             {parsed.messages.map((msg, i) => (
               <MessageBubble key={i} message={msg} index={i} />
@@ -652,11 +667,15 @@ function RequestContentView({ raw, expanded, collapsible }: RequestContentViewPr
             <RequestParams params={parsed.params} />
           </div>
         ) : (
-          <pre className={cn('bg-background/60 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap', !expanded && 'max-h-60')}>
+          <pre
+            className={cn(
+              'bg-background/60 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap',
+              !expanded && 'max-h-60'
+            )}
+          >
             {raw}
           </pre>
-        )
-      )}
+        ))}
     </div>
   )
 }
@@ -667,7 +686,11 @@ interface ResponseContentViewProps {
   collapsible?: boolean
 }
 
-function ResponseContentView({ raw, expanded, collapsible }: ResponseContentViewProps) {
+function ResponseContentView({
+  raw,
+  expanded,
+  collapsible,
+}: ResponseContentViewProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const [collapsed, setCollapsed] = useState(false)
@@ -686,7 +709,12 @@ function ResponseContentView({ raw, expanded, collapsible }: ResponseContentView
           onClick={collapsible ? () => setCollapsed((v) => !v) : undefined}
         >
           {collapsible && (
-            <ChevronRight className={cn('size-3 transition-transform pointer-events-none', !collapsed && 'rotate-90')} />
+            <ChevronRight
+              className={cn(
+                'pointer-events-none size-3 transition-transform',
+                !collapsed && 'rotate-90'
+              )}
+            />
           )}
           {t('Response')}
         </button>
@@ -706,8 +734,13 @@ function ResponseContentView({ raw, expanded, collapsible }: ResponseContentView
         </Button>
       </div>
       {!collapsed && (
-        <div className={cn('bg-background/60 overflow-y-auto rounded border p-3 text-xs leading-relaxed', !expanded && 'max-h-96')}>
-          <Response className='[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:text-[11px] [&_code]:text-[11px] [&_p]:text-xs [&_li]:text-xs [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs'>
+        <div
+          className={cn(
+            'bg-background/60 overflow-y-auto rounded border p-3 text-xs leading-relaxed',
+            !expanded && 'max-h-96'
+          )}
+        >
+          <Response className='[&_code]:text-[11px] [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_li]:text-xs [&_p]:text-xs [&_pre]:text-[11px] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0'>
             {raw}
           </Response>
         </div>
@@ -733,7 +766,7 @@ function ConversationExpandDialog(props: {
           <DialogTitle className='flex items-center gap-2 text-sm'>
             <MessageSquare className='size-4' aria-hidden='true' />
             {t('Conversation')}
-            <div className='flex items-center gap-1.5 ml-1'>
+            <div className='ml-1 flex items-center gap-1.5'>
               <StatusBadge
                 label={data.status}
                 variant={
@@ -763,10 +796,18 @@ function ConversationExpandDialog(props: {
         <div className='min-h-0 flex-1 overflow-y-auto'>
           <div className='space-y-4 p-5'>
             {data.request_content && (
-              <RequestContentView raw={data.request_content} expanded collapsible />
+              <RequestContentView
+                raw={data.request_content}
+                expanded
+                collapsible
+              />
             )}
             {data.response_content && (
-              <ResponseContentView raw={data.response_content} expanded collapsible />
+              <ResponseContentView
+                raw={data.response_content}
+                expanded
+                collapsible
+              />
             )}
             {data.error_message && (
               <div className='space-y-1.5'>
@@ -889,15 +930,15 @@ function ConversationSection(props: { requestId: string }) {
                       {t('Error')}
                     </span>
                     <pre className='max-h-40 overflow-y-auto rounded border border-red-200 bg-red-50 p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap dark:border-red-900 dark:bg-red-950/20'>
-                    {data.error_message}
-                  </pre>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+                      {data.error_message}
+                    </pre>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
     </>
   )
 }

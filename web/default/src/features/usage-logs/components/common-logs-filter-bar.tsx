@@ -90,6 +90,7 @@ export function CommonLogsFilterBar<TData>(
     if (searchParams.requestId) next.requestId = searchParams.requestId
 
     if (Object.keys(next).length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFilters((prev) => ({ ...prev, ...next }))
     }
 

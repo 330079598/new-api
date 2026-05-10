@@ -115,9 +115,7 @@ export const getUserTaskLogs = (params: GetTaskLogsParams) =>
 // Conversation Log API
 // ============================================================================
 
-export async function getConversationLog(
-  requestId: string
-): Promise<{
+export async function getConversationLog(requestId: string): Promise<{
   success: boolean
   message?: string
   data?: ConversationLog

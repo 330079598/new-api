@@ -29,8 +29,20 @@ import {
   ShieldCheck,
   UserCog,
   Info,
+  ChevronDown,
+  MessageSquare,
+  Loader2,
 } from 'lucide-react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from '@/components/ui/collapsible'
+import { getConversationLog } from '../../api'
+import type { ConversationLog } from '../../types'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -388,6 +400,111 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
         <DetailRow key={idx} label={row.label} value={row.value} mono />
       ))}
     </DetailSection>
+  )
+}
+
+function ConversationSection(props: { requestId: string }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['conversation-log', props.requestId],
+    queryFn: async () => {
+      const res = await getConversationLog(props.requestId)
+      if (!res.success) throw new Error(res.message || 'Failed to load')
+      return res.data as ConversationLog
+    },
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  })
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className='flex w-full items-center gap-1.5'>
+        <ChevronDown
+          className={cn(
+            'text-muted-foreground size-3.5 transition-transform',
+            open && 'rotate-180'
+          )}
+        />
+        <Label className='flex cursor-pointer items-center gap-1.5 text-xs font-semibold'>
+          <MessageSquare className='size-3.5' aria-hidden='true' />
+          {t('Conversation')}
+        </Label>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className='bg-muted/30 mt-1.5 min-w-0 space-y-2 overflow-hidden rounded-md border p-2.5'>
+          {isLoading && (
+            <div className='text-muted-foreground flex items-center gap-2 text-xs'>
+              <Loader2 className='size-3 animate-spin' />
+              {t('Loading')}...
+            </div>
+          )}
+          {isError && (
+            <p className='text-xs text-red-500'>
+              {t('Failed to load conversation')}
+            </p>
+          )}
+          {data && (
+            <>
+              <div className='flex items-center gap-2'>
+                <StatusBadge
+                  label={data.status}
+                  variant={
+                    data.status === 'success'
+                      ? 'green'
+                      : data.status === 'error'
+                        ? 'red'
+                        : 'yellow'
+                  }
+                  size='sm'
+                  copyable={false}
+                />
+                {data.is_stream && (
+                  <StatusBadge
+                    label='Stream'
+                    variant='blue'
+                    size='sm'
+                    copyable={false}
+                  />
+                )}
+              </div>
+              {data.request_content && (
+                <div className='space-y-1'>
+                  <span className='text-muted-foreground text-[11px] font-semibold'>
+                    {t('Request')}
+                  </span>
+                  <pre className='bg-background/60 max-h-60 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap'>
+                    {data.request_content}
+                  </pre>
+                </div>
+              )}
+              {data.response_content && (
+                <div className='space-y-1'>
+                  <span className='text-muted-foreground text-[11px] font-semibold'>
+                    {t('Response')}
+                  </span>
+                  <pre className='bg-background/60 max-h-60 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap'>
+                    {data.response_content}
+                  </pre>
+                </div>
+              )}
+              {data.error_message && (
+                <div className='space-y-1'>
+                  <span className='text-[11px] font-semibold text-red-500'>
+                    {t('Error')}
+                  </span>
+                  <pre className='max-h-40 overflow-y-auto rounded border border-red-200 bg-red-50 p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap dark:border-red-900 dark:bg-red-950/20'>
+                    {data.error_message}
+                  </pre>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -1034,6 +1151,11 @@ export function DetailsDialog(props: DetailsDialogProps) {
                   </p>
                 </div>
               </div>
+            )}
+
+            {/* Conversation (only for logs with request_id) */}
+            {props.log.request_id && (
+              <ConversationSection requestId={props.log.request_id} />
             )}
           </div>
         </ScrollArea>

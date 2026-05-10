@@ -92,6 +92,15 @@ type UpdateConversationLogParams struct {
 	ErrorMessage    string
 }
 
+func GetConversationLogByRequestId(requestId string) (*ConversationLog, error) {
+	if requestId == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	log := &ConversationLog{}
+	err := LOG_DB.Where("request_id = ?", requestId).First(log).Error
+	return log, err
+}
+
 func UpdateConversationLog(params UpdateConversationLogParams) {
 	if params.RequestId == "" {
 		return

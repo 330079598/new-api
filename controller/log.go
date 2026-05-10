@@ -10,6 +10,27 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func GetConversationLogByRequestId(c *gin.Context) {
+	requestId := c.Query("request_id")
+	if requestId == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "request_id is required",
+		})
+		return
+	}
+	log, err := model.GetConversationLogByRequestId(requestId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    log,
+	})
+}
+
 func GetAllLogs(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	logType, _ := strconv.Atoi(c.Query("type"))

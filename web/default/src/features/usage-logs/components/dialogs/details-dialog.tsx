@@ -428,10 +428,10 @@ function ConversationSection(props: { requestId: string }) {
             open && 'rotate-180'
           )}
         />
-        <Label className='flex cursor-pointer items-center gap-1.5 text-xs font-semibold'>
+        <span className='flex cursor-pointer items-center gap-1.5 text-xs font-semibold'>
           <MessageSquare className='size-3.5' aria-hidden='true' />
           {t('Conversation')}
-        </Label>
+        </span>
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className='bg-muted/30 mt-1.5 min-w-0 space-y-2 overflow-hidden rounded-md border p-2.5'>
@@ -463,7 +463,7 @@ function ConversationSection(props: { requestId: string }) {
                 />
                 {data.is_stream && (
                   <StatusBadge
-                    label='Stream'
+                    label={t('Stream')}
                     variant='blue'
                     size='sm'
                     copyable={false}

@@ -33,6 +33,7 @@ import {
   MessageSquare,
   Loader2,
   ChevronRight,
+  Maximize2,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -502,14 +503,16 @@ function getRoleStyle(role: string) {
 interface MessageBubbleProps {
   message: ChatMessage
   index: number
+  forceExpanded?: boolean
 }
 
-function MessageBubble({ message, index }: MessageBubbleProps) {
+function MessageBubble({ message, index, forceExpanded }: MessageBubbleProps) {
   const [expanded, setExpanded] = useState(true)
   const style = getRoleStyle(message.role)
   const text = getContentText(message.content)
   const isLong = text.length > 400
-  const displayText = !expanded && isLong ? `${text.slice(0, 400)}…` : text
+  const isExpanded = forceExpanded || expanded
+  const displayText = !isExpanded && isLong ? `${text.slice(0, 400)}…` : text
 
   return (
     <div className={cn('min-w-0 overflow-hidden rounded-md border p-2', style.bubble)}>
@@ -523,7 +526,7 @@ function MessageBubble({ message, index }: MessageBubbleProps) {
           {style.label || message.role}
           <span className='text-[9px] opacity-50 ml-1'>#{index + 1}</span>
         </span>
-        {isLong && (
+        {isLong && !forceExpanded && (
           <button
             type='button'
             className='text-muted-foreground hover:text-foreground flex items-center gap-0.5 text-[10px] transition-colors'
@@ -588,9 +591,10 @@ function RequestParams({ params }: RequestParamsProps) {
 
 interface RequestContentViewProps {
   raw: string
+  expanded?: boolean
 }
 
-function RequestContentView({ raw }: RequestContentViewProps) {
+function RequestContentView({ raw, expanded }: RequestContentViewProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const parsed = parseRequestMessages(raw)
@@ -625,12 +629,12 @@ function RequestContentView({ raw }: RequestContentViewProps) {
       {parsed ? (
         <div className='space-y-1.5'>
           {parsed.messages.map((msg, i) => (
-            <MessageBubble key={i} message={msg} index={i} />
+            <MessageBubble key={i} message={msg} index={i} forceExpanded={expanded} />
           ))}
           <RequestParams params={parsed.params} />
         </div>
       ) : (
-        <pre className='bg-background/60 max-h-60 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap'>
+        <pre className={cn('bg-background/60 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap', !expanded && 'max-h-60')}>
           {raw}
         </pre>
       )}
@@ -640,9 +644,10 @@ function RequestContentView({ raw }: RequestContentViewProps) {
 
 interface ResponseContentViewProps {
   raw: string
+  expanded?: boolean
 }
 
-function ResponseContentView({ raw }: ResponseContentViewProps) {
+function ResponseContentView({ raw, expanded }: ResponseContentViewProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
 
@@ -667,7 +672,7 @@ function ResponseContentView({ raw }: ResponseContentViewProps) {
           )}
         </Button>
       </div>
-      <div className='bg-background/60 max-h-96 overflow-y-auto rounded border p-3 text-xs leading-relaxed'>
+      <div className={cn('bg-background/60 overflow-y-auto rounded border p-3 text-xs leading-relaxed', !expanded && 'max-h-96')}>
         <Response className='[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:text-[11px] [&_code]:text-[11px] [&_p]:text-xs [&_li]:text-xs [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs'>
           {raw}
         </Response>
@@ -676,11 +681,81 @@ function ResponseContentView({ raw }: ResponseContentViewProps) {
   )
 }
 
+// ── ConversationExpandDialog ──────────────────────────────────────────────
+
+function ConversationExpandDialog(props: {
+  data: ConversationLog
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { t } = useTranslation()
+  const { data } = props
+
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent className='flex h-[92vh] w-[96vw] max-w-none flex-col overflow-hidden p-0 sm:max-w-none'>
+        <DialogHeader className='shrink-0 border-b px-5 py-3.5'>
+          <DialogTitle className='flex items-center gap-2 text-sm'>
+            <MessageSquare className='size-4' aria-hidden='true' />
+            {t('Conversation')}
+            <div className='flex items-center gap-1.5 ml-1'>
+              <StatusBadge
+                label={data.status}
+                variant={
+                  data.status === 'success'
+                    ? 'green'
+                    : data.status === 'error'
+                      ? 'red'
+                      : 'yellow'
+                }
+                size='sm'
+                copyable={false}
+              />
+              {data.is_stream && (
+                <StatusBadge
+                  label={t('Stream')}
+                  variant='blue'
+                  size='sm'
+                  copyable={false}
+                />
+              )}
+            </div>
+          </DialogTitle>
+          <DialogDescription className='sr-only'>
+            {t('Conversation details')}
+          </DialogDescription>
+        </DialogHeader>
+        <div className='min-h-0 flex-1 overflow-y-auto'>
+          <div className='space-y-4 p-5'>
+            {data.request_content && (
+              <RequestContentView raw={data.request_content} expanded />
+            )}
+            {data.response_content && (
+              <ResponseContentView raw={data.response_content} expanded />
+            )}
+            {data.error_message && (
+              <div className='space-y-1.5'>
+                <span className='text-[11px] font-semibold text-red-500'>
+                  {t('Error')}
+                </span>
+                <pre className='overflow-auto rounded border border-red-200 bg-red-50 p-2.5 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap dark:border-red-900 dark:bg-red-950/20'>
+                  {data.error_message}
+                </pre>
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── ConversationSection ───────────────────────────────────────────────────
 
 function ConversationSection(props: { requestId: string }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  const [expandOpen, setExpandOpen] = useState(false)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['conversation-log', props.requestId],
@@ -695,68 +770,90 @@ function ConversationSection(props: { requestId: string }) {
   })
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className='flex w-full items-center gap-1.5'>
-        <ChevronDown
-          className={cn(
-            'text-muted-foreground size-3.5 transition-transform',
-            open && 'rotate-180'
-          )}
+    <>
+      {data && (
+        <ConversationExpandDialog
+          data={data}
+          open={expandOpen}
+          onOpenChange={setExpandOpen}
         />
-        <span className='flex cursor-pointer items-center gap-1.5 text-xs font-semibold'>
-          <MessageSquare className='size-3.5' aria-hidden='true' />
-          {t('Conversation')}
-        </span>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className='bg-muted/30 mt-1.5 min-w-0 space-y-2.5 overflow-hidden rounded-md border p-2.5'>
-          {isLoading && (
-            <div className='text-muted-foreground flex items-center gap-2 text-xs'>
-              <Loader2 className='size-3 animate-spin' />
-              {t('Loading')}...
-            </div>
-          )}
-          {isError && (
-            <p className='text-xs text-red-500'>
-              {t('Failed to load conversation')}
-            </p>
-          )}
+      )}
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <div className='flex w-full items-center gap-1.5'>
+          <CollapsibleTrigger className='flex flex-1 items-center gap-1.5'>
+            <ChevronDown
+              className={cn(
+                'text-muted-foreground size-3.5 transition-transform',
+                open && 'rotate-180'
+              )}
+            />
+            <span className='flex cursor-pointer items-center gap-1.5 text-xs font-semibold'>
+              <MessageSquare className='size-3.5' aria-hidden='true' />
+              {t('Conversation')}
+            </span>
+          </CollapsibleTrigger>
           {data && (
-            <>
-              <div className='flex items-center gap-2'>
-                <StatusBadge
-                  label={data.status}
-                  variant={
-                    data.status === 'success'
-                      ? 'green'
-                      : data.status === 'error'
-                        ? 'red'
-                        : 'yellow'
-                  }
-                  size='sm'
-                  copyable={false}
-                />
-                {data.is_stream && (
+            <Button
+              variant='ghost'
+              size='sm'
+              className='h-5 w-5 p-0'
+              onClick={() => setExpandOpen(true)}
+              title={t('Expand')}
+              aria-label={t('Expand')}
+            >
+              <Maximize2 className='size-3' />
+            </Button>
+          )}
+        </div>
+        <CollapsibleContent>
+          <div className='bg-muted/30 mt-1.5 min-w-0 space-y-2.5 overflow-hidden rounded-md border p-2.5'>
+            {isLoading && (
+              <div className='text-muted-foreground flex items-center gap-2 text-xs'>
+                <Loader2 className='size-3 animate-spin' />
+                {t('Loading')}...
+              </div>
+            )}
+            {isError && (
+              <p className='text-xs text-red-500'>
+                {t('Failed to load conversation')}
+              </p>
+            )}
+            {data && (
+              <>
+                <div className='flex items-center gap-2'>
                   <StatusBadge
-                    label={t('Stream')}
-                    variant='blue'
+                    label={data.status}
+                    variant={
+                      data.status === 'success'
+                        ? 'green'
+                        : data.status === 'error'
+                          ? 'red'
+                          : 'yellow'
+                    }
                     size='sm'
                     copyable={false}
                   />
+                  {data.is_stream && (
+                    <StatusBadge
+                      label={t('Stream')}
+                      variant='blue'
+                      size='sm'
+                      copyable={false}
+                    />
+                  )}
+                </div>
+                {data.request_content && (
+                  <RequestContentView raw={data.request_content} />
                 )}
-              </div>
-              {data.request_content && (
-                <RequestContentView raw={data.request_content} />
-              )}
-              {data.response_content && (
-                <ResponseContentView raw={data.response_content} />
-              )}
-              {data.error_message && (
-                <div className='space-y-1'>
-                  <span className='text-[11px] font-semibold text-red-500'>
-                    {t('Error')}
-                  </span>
-                  <pre className='max-h-40 overflow-y-auto rounded border border-red-200 bg-red-50 p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap dark:border-red-900 dark:bg-red-950/20'>
+                {data.response_content && (
+                  <ResponseContentView raw={data.response_content} />
+                )}
+                {data.error_message && (
+                  <div className='space-y-1'>
+                    <span className='text-[11px] font-semibold text-red-500'>
+                      {t('Error')}
+                    </span>
+                    <pre className='max-h-40 overflow-y-auto rounded border border-red-200 bg-red-50 p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap dark:border-red-900 dark:bg-red-950/20'>
                     {data.error_message}
                   </pre>
                 </div>
@@ -766,6 +863,7 @@ function ConversationSection(props: { requestId: string }) {
         </div>
       </CollapsibleContent>
     </Collapsible>
+    </>
   )
 }
 

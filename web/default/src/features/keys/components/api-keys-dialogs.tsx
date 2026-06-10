@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
 import { ApiKeysDeleteDialog } from './api-keys-delete-dialog'
 import { ApiKeysMutateDrawer } from './api-keys-mutate-drawer'
 import { useApiKeys } from './api-keys-provider'
@@ -35,7 +34,7 @@ export function ApiKeysDialogs() {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLastMutateSide('left')
     } else if (open === 'update') {
-       
+
       setLastMutateSide('right')
     }
   }, [open])
@@ -46,7 +45,6 @@ export function ApiKeysDialogs() {
         open={open === 'create' || open === 'update'}
         onOpenChange={(isOpen) => !isOpen && setOpen(null)}
         currentRow={open === 'update' ? currentRow || undefined : undefined}
-        side={mutateSide}
       />
       <ApiKeysDeleteDialog />
       <CCSwitchDialog

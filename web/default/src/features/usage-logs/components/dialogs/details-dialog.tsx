@@ -49,12 +49,13 @@ import {
   CollapsibleContent,
 } from '@/components/ui/collapsible'
 import {
-  Dialog,
+  Dialog as DialogRoot,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Dialog } from '@/components/dialog'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Response } from '@/components/ai-elements/response'
@@ -760,7 +761,7 @@ function ConversationExpandDialog(props: {
   const { data } = props
 
   return (
-    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+    <DialogRoot open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className='flex h-[92vh] w-[96vw] max-w-none flex-col overflow-hidden p-0 sm:max-w-none'>
         <DialogHeader className='shrink-0 border-b px-5 py-3.5'>
           <DialogTitle className='flex items-center gap-2 text-sm'>
@@ -822,7 +823,7 @@ function ConversationExpandDialog(props: {
           </div>
         </div>
       </DialogContent>
-    </Dialog>
+    </DialogRoot>
   )
 }
 
@@ -1596,7 +1597,6 @@ export function DetailsDialog(props: DetailsDialogProps) {
             )}
           </div>
         </ScrollArea>
-      </DialogContent>
     </Dialog>
   )
 }

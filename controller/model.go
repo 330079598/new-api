@@ -178,6 +178,9 @@ type modelListGroups struct {
 func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 	tokenGroup := common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
 	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+	if common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled) && userGroup == "" && tokenGroup == "" {
+		return modelListGroups{}, nil
+	}
 	if userGroup == "" && (tokenGroup == "" || tokenGroup == "auto") {
 		var err error
 		userGroup, err = model.GetUserGroup(c.GetInt("id"), false)

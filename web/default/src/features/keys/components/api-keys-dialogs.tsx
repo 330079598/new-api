@@ -23,21 +23,6 @@ import { CCSwitchDialog } from './dialogs/cc-switch-dialog'
 
 export function ApiKeysDialogs() {
   const { open, setOpen, currentRow, resolvedKey } = useApiKeys()
-  const [lastMutateSide, setLastMutateSide] = useState<'left' | 'right'>(
-    'right'
-  )
-  const mutateSide =
-    open === 'create' ? 'left' : open === 'update' ? 'right' : lastMutateSide
-
-  useEffect(() => {
-    if (open === 'create') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLastMutateSide('left')
-    } else if (open === 'update') {
-
-      setLastMutateSide('right')
-    }
-  }, [open])
 
   return (
     <>

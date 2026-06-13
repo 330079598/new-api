@@ -1589,6 +1589,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
                   {details}
                 </p>
               </div>
+            </div>
             )}
 
             {/* Conversation (only for logs with request_id) */}

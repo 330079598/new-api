@@ -16,8 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import {
   Copy,
   Check,
@@ -31,37 +29,22 @@ import {
   ShieldCheck,
   UserCog,
   Info,
-  ChevronDown,
-  MessageSquare,
-  Loader2,
-  ChevronRight,
-  Maximize2,
   LogIn,
 } from 'lucide-react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
+
+import { Dialog } from '@/components/dialog'
+import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
+import { Button } from '@/components/ui/button'
+import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
+import { Label } from '@/components/ui/label'
+import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { Button } from '@/components/ui/button'
-import {
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from '@/components/ui/collapsible'
-import {
-  Dialog as DialogRoot,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Dialog } from '@/components/dialog'
-import { Label } from '@/components/ui/label'
-import { Response } from '@/components/ai-elements/response'
-import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
-import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
-import { getConversationLog } from '../../api'
+
 import type { UsageLog } from '../../data/schema'
 import {
   parseLogOther,
@@ -80,7 +63,7 @@ import {
   isPerCallBilling,
   isTimingLogType,
 } from '../../lib/utils'
-import type { ConversationLog, LogOtherData } from '../../types'
+import { USAGE_BILLING_PATH, type LogOtherData } from '../../types'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
 // to its i18n label key for display in the audit details.
@@ -127,11 +110,13 @@ function DetailRow(props: {
 
 function DetailSection(props: {
   icon?: React.ReactNode
+  iconTone?: IconBadgeTone
   label: string
   variant?: 'default' | 'danger'
   children: React.ReactNode
 }) {
   const isDanger = props.variant === 'danger'
+  const iconTone = isDanger ? 'destructive' : props.iconTone
   return (
     <div className='min-w-0 space-y-1.5'>
       <Label
@@ -140,7 +125,11 @@ function DetailSection(props: {
           isDanger && 'text-red-500'
         )}
       >
-        {props.icon}
+        {props.icon && (
+          <IconBadge tone={iconTone} size='xs'>
+            {props.icon}
+          </IconBadge>
+        )}
         {props.label}
       </Label>
       <div
@@ -160,6 +149,50 @@ function DetailSection(props: {
 function formatRatio(ratio: number | undefined): string {
   if (ratio == null) return '-'
   return ratio.toFixed(4)
+}
+
+function getUsageBillingPathLabel(
+  t: TFunction,
+  adminInfo: LogOtherData['admin_info']
+): string {
+  switch (adminInfo?.usage_billing_path) {
+    case USAGE_BILLING_PATH.LOCAL:
+      return t('Local Billing')
+    case USAGE_BILLING_PATH.OPENAI:
+      return t('Upstream Response (billing-usage-openai)')
+    case USAGE_BILLING_PATH.OPENAI_ESTIMATED:
+      return t('Upstream Response (billing-usage-openai-estimated)')
+    case USAGE_BILLING_PATH.ANTHROPIC:
+      return t('Upstream Response (billing-usage-anthropic)')
+    case USAGE_BILLING_PATH.ANTHROPIC_ESTIMATED:
+      return t('Upstream Response (billing-usage-anthropic-estimated)')
+    case USAGE_BILLING_PATH.GEMINI:
+      return t('Upstream Response (billing-usage-gemini)')
+    case USAGE_BILLING_PATH.GEMINI_ESTIMATED:
+      return t('Upstream Response (billing-usage-gemini-estimated)')
+    case USAGE_BILLING_PATH.UPSTREAM:
+      return t('Upstream Response')
+    default:
+      return adminInfo?.local_count_tokens
+        ? t('Local Billing')
+        : t('Upstream Response')
+  }
+}
+
+function isUsageBillingPathLocal(adminInfo: LogOtherData['admin_info']): boolean {
+  if (adminInfo?.usage_billing_path) {
+    return adminInfo.usage_billing_path === USAGE_BILLING_PATH.LOCAL
+  }
+  return adminInfo?.local_count_tokens === true
+}
+
+function quotaSaturationKindLabel(
+  kind: 'overflow' | 'underflow' | 'nan',
+  t: (key: string) => string
+): string {
+  if (kind === 'overflow') return t('Overflow')
+  if (kind === 'underflow') return t('Underflow')
+  return t('Invalid (NaN)')
 }
 
 function BillingBreakdown(props: {
@@ -329,10 +362,8 @@ function BillingBreakdown(props: {
 
   if (isAdmin && other.admin_info) {
     rows.push({
-      label: t('Billing Source'),
-      value: other.admin_info.local_count_tokens
-        ? t('Local Billing')
-        : t('Upstream Response'),
+      label: t('Billing Path'),
+      value: getUsageBillingPathLabel(t, other.admin_info),
     })
   }
 
@@ -345,8 +376,8 @@ function BillingBreakdown(props: {
 
   return (
     <DetailSection label={t('Billing Details')}>
-      {rows.map((row, idx) => (
-        <DetailRow key={idx} label={row.label} value={row.value} mono />
+      {rows.map((row) => (
+        <DetailRow key={row.label} label={row.label} value={row.value} mono />
       ))}
     </DetailSection>
   )
@@ -411,548 +442,10 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
 
   return (
     <DetailSection label={t('Token Breakdown')}>
-      {rows.map((row, idx) => (
-        <DetailRow key={idx} label={row.label} value={row.value} mono />
+      {rows.map((row) => (
+        <DetailRow key={row.label} label={row.label} value={row.value} mono />
       ))}
     </DetailSection>
-  )
-}
-
-// ── Conversation helpers ──────────────────────────────────────────────────
-
-interface ChatMessage {
-  role: string
-  content: unknown
-}
-
-/**
- * Try to parse request_content as a chat-completions JSON body and extract
- * the messages array. Returns null when the content is not parseable or has
- * no messages field.
- */
-function parseRequestMessages(raw: string): {
-  messages: ChatMessage[]
-  params: Record<string, unknown>
-} | null {
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>
-    if (!parsed || typeof parsed !== 'object') return null
-    const messages = parsed.messages
-    if (!Array.isArray(messages)) return null
-    const params: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(parsed)) {
-      if (k !== 'messages') params[k] = v
-    }
-    return { messages: messages as ChatMessage[], params }
-  } catch {
-    return null
-  }
-}
-
-/** Extract a plain-text preview from a message content (string or parts array). */
-function getContentText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === 'string') return part
-        if (part && typeof part === 'object') {
-          const p = part as Record<string, unknown>
-          if (p.type === 'text' && typeof p.text === 'string') return p.text
-          if (p.type === 'image_url') return '[image]'
-          if (p.type === 'image') return '[image]'
-          if (p.type === 'file') return '[file]'
-          if (p.type === 'input_audio') return '[audio]'
-        }
-        return ''
-      })
-      .filter(Boolean)
-      .join('\n')
-  }
-  return ''
-}
-
-const ROLE_STYLES: Record<
-  string,
-  { label: string; badge: string; bubble: string }
-> = {
-  system: {
-    label: 'System',
-    badge:
-      'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300',
-    bubble:
-      'bg-violet-50/60 border-violet-200/60 dark:bg-violet-950/20 dark:border-violet-900/40',
-  },
-  user: {
-    label: 'User',
-    badge:
-      'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300',
-    bubble:
-      'bg-blue-50/40 border-blue-200/50 dark:bg-blue-950/15 dark:border-blue-900/30',
-  },
-  assistant: {
-    label: 'Assistant',
-    badge:
-      'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300',
-    bubble:
-      'bg-emerald-50/40 border-emerald-200/50 dark:bg-emerald-950/15 dark:border-emerald-900/30',
-  },
-  tool: {
-    label: 'Tool',
-    badge:
-      'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300',
-    bubble:
-      'bg-amber-50/40 border-amber-200/50 dark:bg-amber-950/15 dark:border-amber-900/30',
-  },
-}
-
-const DEFAULT_ROLE_STYLE = {
-  label: '',
-  badge: 'border-border bg-muted/40 text-muted-foreground',
-  bubble: 'bg-muted/30 border-border/60',
-}
-
-function getRoleStyle(role: string) {
-  return ROLE_STYLES[role] ?? { ...DEFAULT_ROLE_STYLE, label: role }
-}
-
-interface MessageBubbleProps {
-  message: ChatMessage
-  index: number
-}
-
-function MessageBubble({ message, index }: MessageBubbleProps) {
-  const [collapsed, setCollapsed] = useState(false)
-  const style = getRoleStyle(message.role)
-  const text = getContentText(message.content)
-
-  return (
-    <div
-      className={cn('min-w-0 overflow-hidden rounded-md border', style.bubble)}
-    >
-      <div className='flex min-w-0 items-center gap-1.5 px-2 py-1.5'>
-        <button
-          type='button'
-          className='text-muted-foreground hover:text-foreground flex shrink-0 cursor-pointer items-center transition-colors'
-          onClick={() => setCollapsed((v) => !v)}
-          aria-label={collapsed ? 'Expand' : 'Collapse'}
-        >
-          <ChevronRight
-            className={cn(
-              'size-3 transition-transform',
-              !collapsed && 'rotate-90'
-            )}
-          />
-        </button>
-        <span
-          className={cn(
-            'inline-flex shrink-0 cursor-pointer items-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold',
-            style.badge
-          )}
-          onClick={() => setCollapsed((v) => !v)}
-        >
-          {style.label || message.role}
-          <span className='ml-1 text-[9px] opacity-50'>#{index + 1}</span>
-        </span>
-        {collapsed && text && (
-          <span className='text-muted-foreground min-w-0 truncate font-mono text-[10px]'>
-            {text.slice(0, 80).replace(/\n/g, ' ')}
-          </span>
-        )}
-      </div>
-      {!collapsed && (
-        <p className='min-w-0 px-2 pb-2 text-xs leading-relaxed break-words whitespace-pre-wrap'>
-          {text}
-        </p>
-      )}
-    </div>
-  )
-}
-
-interface RequestParamsProps {
-  params: Record<string, unknown>
-}
-
-function RequestParams({ params }: RequestParamsProps) {
-  const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
-  const entries = Object.entries(params).filter(
-    ([, v]) => v !== undefined && v !== null
-  )
-  if (entries.length === 0) return null
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className='text-muted-foreground hover:text-foreground flex items-center gap-1 text-[10px] transition-colors'>
-        <ChevronRight
-          className={cn('size-3 transition-transform', open && 'rotate-90')}
-        />
-        {t('Parameters')} ({entries.length})
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className='bg-background/60 mt-1 overflow-x-auto rounded border p-2'>
-          <table className='w-full text-[11px]'>
-            <tbody>
-              {entries.map(([k, v]) => (
-                <tr key={k} className='align-top'>
-                  <td className='text-muted-foreground pr-3 pb-0.5 font-mono whitespace-nowrap'>
-                    {k}
-                  </td>
-                  <td className='text-foreground pb-0.5 font-mono break-all'>
-                    {typeof v === 'object' ? JSON.stringify(v) : String(v)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
-interface RequestContentViewProps {
-  raw: string
-  expanded?: boolean
-  collapsible?: boolean
-}
-
-function RequestContentView({
-  raw,
-  expanded,
-  collapsible,
-}: RequestContentViewProps) {
-  const { t } = useTranslation()
-  const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
-  const [collapsed, setCollapsed] = useState(false)
-  const parsed = parseRequestMessages(raw)
-
-  return (
-    <div className='space-y-1'>
-      <div className='flex items-center justify-between'>
-        <button
-          type='button'
-          className={cn(
-            'flex items-center gap-1 text-[11px] font-semibold',
-            collapsible
-              ? 'text-muted-foreground hover:text-foreground cursor-pointer transition-colors'
-              : 'text-muted-foreground cursor-default'
-          )}
-          onClick={collapsible ? () => setCollapsed((v) => !v) : undefined}
-        >
-          {collapsible && (
-            <ChevronRight
-              className={cn(
-                'pointer-events-none size-3 transition-transform',
-                !collapsed && 'rotate-90'
-              )}
-            />
-          )}
-          {t('Request')}
-          {parsed && (
-            <span className='text-muted-foreground/60 font-normal'>
-              · {parsed.messages.length} {t('Messages')}
-            </span>
-          )}
-        </button>
-        <Button
-          variant='ghost'
-          size='sm'
-          className='h-5 w-5 p-0'
-          onClick={() => copyToClipboard(raw)}
-          title={t('Copy')}
-          aria-label={t('Copy')}
-        >
-          {copiedText === raw ? (
-            <Check className='size-3 text-green-600' />
-          ) : (
-            <Copy className='size-3' />
-          )}
-        </Button>
-      </div>
-
-      {!collapsed &&
-        (parsed ? (
-          <div className='space-y-1.5'>
-            {parsed.messages.map((msg, i) => (
-              <MessageBubble key={i} message={msg} index={i} />
-            ))}
-            <RequestParams params={parsed.params} />
-          </div>
-        ) : (
-          <pre
-            className={cn(
-              'bg-background/60 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap',
-              !expanded && 'max-h-60'
-            )}
-          >
-            {raw}
-          </pre>
-        ))}
-    </div>
-  )
-}
-
-interface ResponseContentViewProps {
-  raw: string
-  expanded?: boolean
-  collapsible?: boolean
-}
-
-function ResponseContentView({
-  raw,
-  expanded,
-  collapsible,
-}: ResponseContentViewProps) {
-  const { t } = useTranslation()
-  const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
-  const [collapsed, setCollapsed] = useState(false)
-
-  return (
-    <div className='space-y-1'>
-      <div className='flex items-center justify-between'>
-        <button
-          type='button'
-          className={cn(
-            'flex items-center gap-1 text-[11px] font-semibold',
-            collapsible
-              ? 'text-muted-foreground hover:text-foreground cursor-pointer transition-colors'
-              : 'text-muted-foreground cursor-default'
-          )}
-          onClick={collapsible ? () => setCollapsed((v) => !v) : undefined}
-        >
-          {collapsible && (
-            <ChevronRight
-              className={cn(
-                'pointer-events-none size-3 transition-transform',
-                !collapsed && 'rotate-90'
-              )}
-            />
-          )}
-          {t('Response')}
-        </button>
-        <Button
-          variant='ghost'
-          size='sm'
-          className='h-5 w-5 p-0'
-          onClick={() => copyToClipboard(raw)}
-          title={t('Copy')}
-          aria-label={t('Copy')}
-        >
-          {copiedText === raw ? (
-            <Check className='size-3 text-green-600' />
-          ) : (
-            <Copy className='size-3' />
-          )}
-        </Button>
-      </div>
-      {!collapsed && (
-        <div
-          className={cn(
-            'bg-background/60 overflow-y-auto rounded border p-3 text-xs leading-relaxed',
-            !expanded && 'max-h-96'
-          )}
-        >
-          <Response className='[&_code]:text-[11px] [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_li]:text-xs [&_p]:text-xs [&_pre]:text-[11px] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0'>
-            {raw}
-          </Response>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── ConversationExpandDialog ──────────────────────────────────────────────
-
-function ConversationExpandDialog(props: {
-  data: ConversationLog
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
-  const { t } = useTranslation()
-  const { data } = props
-
-  return (
-    <DialogRoot open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className='flex h-[92vh] w-[96vw] max-w-none flex-col overflow-hidden p-0 sm:max-w-none'>
-        <DialogHeader className='shrink-0 border-b px-5 py-3.5'>
-          <DialogTitle className='flex items-center gap-2 text-sm'>
-            <MessageSquare className='size-4' aria-hidden='true' />
-            {t('Conversation')}
-            <div className='ml-1 flex items-center gap-1.5'>
-              <StatusBadge
-                label={data.status}
-                variant={
-                  data.status === 'success'
-                    ? 'green'
-                    : data.status === 'error'
-                      ? 'red'
-                      : 'yellow'
-                }
-                size='sm'
-                copyable={false}
-              />
-              {data.is_stream && (
-                <StatusBadge
-                  label={t('Stream')}
-                  variant='blue'
-                  size='sm'
-                  copyable={false}
-                />
-              )}
-            </div>
-          </DialogTitle>
-          <DialogDescription className='sr-only'>
-            {t('Conversation details')}
-          </DialogDescription>
-        </DialogHeader>
-        <div className='min-h-0 flex-1 overflow-y-auto'>
-          <div className='space-y-4 p-5'>
-            {data.request_content && (
-              <RequestContentView
-                raw={data.request_content}
-                expanded
-                collapsible
-              />
-            )}
-            {data.response_content && (
-              <ResponseContentView
-                raw={data.response_content}
-                expanded
-                collapsible
-              />
-            )}
-            {data.error_message && (
-              <div className='space-y-1.5'>
-                <span className='text-[11px] font-semibold text-red-500'>
-                  {t('Error')}
-                </span>
-                <pre className='overflow-auto rounded border border-red-200 bg-red-50 p-2.5 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap dark:border-red-900 dark:bg-red-950/20'>
-                  {data.error_message}
-                </pre>
-              </div>
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </DialogRoot>
-  )
-}
-
-// ── ConversationSection ───────────────────────────────────────────────────
-
-function ConversationSection(props: { requestId: string }) {
-  const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
-  const [expandOpen, setExpandOpen] = useState(false)
-
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['conversation-log', props.requestId],
-    queryFn: async () => {
-      const res = await getConversationLog(props.requestId)
-      if (!res.success) throw new Error(res.message || 'Failed to load')
-      return res.data as ConversationLog
-    },
-    enabled: open,
-    staleTime: 5 * 60 * 1000,
-    retry: 1,
-  })
-
-  return (
-    <>
-      {data && (
-        <ConversationExpandDialog
-          data={data}
-          open={expandOpen}
-          onOpenChange={setExpandOpen}
-        />
-      )}
-      <Collapsible open={open} onOpenChange={setOpen}>
-        <div className='flex w-full items-center gap-1.5'>
-          <CollapsibleTrigger className='flex flex-1 items-center gap-1.5'>
-            <ChevronDown
-              className={cn(
-                'text-muted-foreground size-3.5 transition-transform',
-                open && 'rotate-180'
-              )}
-            />
-            <span className='flex cursor-pointer items-center gap-1.5 text-xs font-semibold'>
-              <MessageSquare className='size-3.5' aria-hidden='true' />
-              {t('Conversation')}
-            </span>
-          </CollapsibleTrigger>
-          {data && (
-            <Button
-              variant='ghost'
-              size='sm'
-              className='h-5 w-5 p-0'
-              onClick={() => setExpandOpen(true)}
-              title={t('Expand')}
-              aria-label={t('Expand')}
-            >
-              <Maximize2 className='size-3' />
-            </Button>
-          )}
-        </div>
-        <CollapsibleContent>
-          <div className='bg-muted/30 mt-1.5 min-w-0 space-y-2.5 overflow-hidden rounded-md border p-2.5'>
-            {isLoading && (
-              <div className='text-muted-foreground flex items-center gap-2 text-xs'>
-                <Loader2 className='size-3 animate-spin' />
-                {t('Loading')}...
-              </div>
-            )}
-            {isError && (
-              <p className='text-xs text-red-500'>
-                {t('Failed to load conversation')}
-              </p>
-            )}
-            {data && (
-              <>
-                <div className='flex items-center gap-2'>
-                  <StatusBadge
-                    label={data.status}
-                    variant={
-                      data.status === 'success'
-                        ? 'green'
-                        : data.status === 'error'
-                          ? 'red'
-                          : 'yellow'
-                    }
-                    size='sm'
-                    copyable={false}
-                  />
-                  {data.is_stream && (
-                    <StatusBadge
-                      label={t('Stream')}
-                      variant='blue'
-                      size='sm'
-                      copyable={false}
-                    />
-                  )}
-                </div>
-                {data.request_content && (
-                  <RequestContentView raw={data.request_content} />
-                )}
-                {data.response_content && (
-                  <ResponseContentView raw={data.response_content} />
-                )}
-                {data.error_message && (
-                  <div className='space-y-1'>
-                    <span className='text-[11px] font-semibold text-red-500'>
-                      {t('Error')}
-                    </span>
-                    <pre className='max-h-40 overflow-y-auto rounded border border-red-200 bg-red-50 p-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap dark:border-red-900 dark:bg-red-950/20'>
-                      {data.error_message}
-                    </pre>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-    </>
   )
 }
 
@@ -1091,6 +584,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const useChannel = other?.admin_info?.use_channel
   const channelChain =
     useChannel && useChannel.length > 0 ? useChannel.join(' → ') : undefined
+  let reasoningEffortVariant: StatusBadgeProps['variant'] = 'green'
+  if (other?.reasoning_effort === 'high') {
+    reasoningEffortVariant = 'orange'
+  } else if (other?.reasoning_effort === 'medium') {
+    reasoningEffortVariant = 'yellow'
+  }
 
   return (
     <Dialog
@@ -1261,6 +760,41 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </DetailSection>
         )}
 
+        {/* Quota saturation marker (admin only) */}
+        {props.isAdmin && other?.admin_info?.quota_saturation && (
+          <DetailSection
+            icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
+            label={t('Quota clamped')}
+            variant='danger'
+          >
+            <p className='mb-1 text-xs wrap-break-word'>
+              {t('Quota saturation protection triggered')}
+            </p>
+            <DetailRow
+              label={t('Kind')}
+              value={quotaSaturationKindLabel(
+                other.admin_info.quota_saturation.kind,
+                t
+              )}
+            />
+            <DetailRow
+              label={t('Original value')}
+              value={String(other.admin_info.quota_saturation.original)}
+              mono
+            />
+            <DetailRow
+              label={t('Clamped to')}
+              value={String(other.admin_info.quota_saturation.clamped)}
+              mono
+            />
+            <DetailRow
+              label={t('Operation')}
+              value={other.admin_info.quota_saturation.op}
+              mono
+            />
+          </DetailSection>
+        )}
+
         {/* Reject reason (admin only) */}
         {props.isAdmin && other?.reject_reason && (
           <DetailSection
@@ -1316,11 +850,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {showTopupAuditSection && (
           <DetailSection
             icon={<ShieldCheck className='size-3.5' aria-hidden='true' />}
+            iconTone='success'
             label={t('Top-up Audit Info')}
           >
-            {topupAuditFields.map((field, idx) => (
+            {topupAuditFields.map((field) => (
               <DetailRow
-                key={idx}
+                key={field.label}
                 label={field.label}
                 value={field.value}
                 mono
@@ -1331,7 +866,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
                 <Info className='mt-0.5 size-3.5 shrink-0' aria-hidden='true' />
                 <span>
                   {t(
-                    'This record was written by a pre-upgrade instance and lacks audit info. Upgrade the instance to record server IP, callback IP, payment method and system version.'
+                    'This historical record predates audit-info tracking and cannot be backfilled. The current instance already records server IP, callback IP, payment method, and system version for new top-ups going forward.'
                   )}
                 </span>
               </div>
@@ -1360,6 +895,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {showManageAuditSection && (
           <DetailSection
             icon={<ShieldCheck className='size-3.5' aria-hidden='true' />}
+            iconTone='info'
             label={t('Operation Audit Info')}
           >
             {operationText != null && (
@@ -1402,14 +938,15 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {isLogin && loginAuditFields.length > 0 && (
           <DetailSection
             icon={<LogIn className='size-3.5' aria-hidden='true' />}
+            iconTone='info'
             label={t('Login Info')}
           >
             {operationText != null && (
               <DetailRow label={t('Operation')} value={operationText} />
             )}
-            {loginAuditFields.map((field, idx) => (
+            {loginAuditFields.map((field) => (
               <DetailRow
-                key={idx}
+                key={field.label}
                 label={field.label}
                 value={field.value}
                 mono
@@ -1422,6 +959,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {hasAudioTokens && other && (
           <DetailSection
             icon={<Headphones className='size-3.5' aria-hidden='true' />}
+            iconTone='chart-4'
             label={t('Audio Tokens')}
           >
             {other.audio_input != null && other.audio_input > 0 && (
@@ -1462,13 +1000,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
             value={
               <StatusBadge
                 label={other.reasoning_effort}
-                variant={
-                  other.reasoning_effort === 'high'
-                    ? 'orange'
-                    : other.reasoning_effort === 'medium'
-                      ? 'yellow'
-                      : 'green'
-                }
+                variant={reasoningEffortVariant}
                 size='sm'
                 copyable={false}
               />
@@ -1523,13 +1055,14 @@ export function DetailsDialog(props: DetailsDialogProps) {
 
         {/* Tiered pricing breakdown (when billing_mode is tiered_expr) */}
         {isTieredBilling && other?.expr_b64 && (
-          <div className='bg-muted/30 min-w-0 overflow-hidden rounded-md border px-3 max-sm:px-2'>
+          <DetailSection label={t('Dynamic Pricing')}>
             <DynamicPricingBreakdown
+              compact
               billingExpr={decodeBillingExprB64(other.expr_b64)}
               matchedTierLabel={other.matched_tier}
               hideCacheColumns={!hasAnyCacheTokens(other)}
             />
-          </div>
+          </DetailSection>
         )}
 
         {/* Admin billing mode indicator for non-consume */}
@@ -1538,18 +1071,16 @@ export function DetailsDialog(props: DetailsDialogProps) {
           props.log.type !== 6 &&
           other?.admin_info && (
             <DetailRow
-              label={t('Billing Source')}
+              label={t('Billing Path')}
               value={
                 <span className='flex items-center gap-1'>
-                  {other.admin_info.local_count_tokens ? (
+                  {isUsageBillingPathLocal(other.admin_info) ? (
                     <Monitor className='size-3 text-blue-500' />
                   ) : (
                     <Cloud className='size-3 text-emerald-500' />
                   )}
                   <span className='text-xs'>
-                    {other.admin_info.local_count_tokens
-                      ? t('Local Billing')
-                      : t('Upstream Response')}
+                    {getUsageBillingPathLabel(t, other.admin_info)}
                   </span>
                 </span>
               }
@@ -1651,14 +1182,15 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {other?.po && Array.isArray(other.po) && other.po.length > 0 && (
           <DetailSection
             icon={<Settings2 className='size-3.5' aria-hidden='true' />}
+            iconTone='chart-3'
             label={`${t('Param Override')} (${other.po.length})`}
           >
-            {other.po.filter(Boolean).map((line, idx) => {
+            {other.po.filter(Boolean).map((line) => {
               const parsed = parseAuditLine(line)
               if (!parsed) return null
               return (
                 <div
-                  key={idx}
+                  key={`${parsed.action}-${parsed.content}`}
                   className='bg-background/60 flex min-w-0 flex-col gap-1.5 rounded border p-2 sm:flex-row sm:items-start sm:gap-2'
                 >
                   <StatusBadge
@@ -1674,11 +1206,6 @@ export function DetailsDialog(props: DetailsDialogProps) {
               )
             })}
           </DetailSection>
-        )}
-
-        {/* Conversation (only for logs with request_id) */}
-        {props.log.request_id && (
-          <ConversationSection requestId={props.log.request_id} />
         )}
 
         {/* Content */}

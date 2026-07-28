@@ -211,6 +211,7 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 	}
 
 	HandleStreamFinalResponse(c, info, claudeInfo)
+	service.RecordConversationResponse(c, info, claudeInfo.ResponseText.String())
 	return claudeInfo.Usage, nil
 }
 
@@ -261,8 +262,29 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		}
 	}
 
+	service.RecordConversationResponse(c, info, claudeResponseContent(&claudeResponse))
 	service.IOCopyBytesGracefully(c, httpResp, responseData)
 	return nil
+}
+
+func claudeResponseContent(response *dto.ClaudeResponse) string {
+	if response == nil {
+		return ""
+	}
+
+	texts := make([]string, 0, len(response.Content)+1)
+	if response.Completion != "" {
+		texts = append(texts, response.Completion)
+	}
+	for _, content := range response.Content {
+		if text := content.GetText(); text != "" {
+			texts = append(texts, text)
+		}
+		if content.Thinking != nil && *content.Thinking != "" {
+			texts = append(texts, *content.Thinking)
+		}
+	}
+	return strings.Join(texts, "\n")
 }
 
 func ClaudeHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {

@@ -202,6 +202,7 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	} else {
 		patchGeminiZeroCompletionUsage(c, info, usage, responseText.String(), imageCount)
 	}
+	service.RecordConversationResponse(c, info, responseText.String())
 
 	return usage, nil
 }
@@ -361,6 +362,7 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	fullTextResponse := responseGeminiChat2OpenAI(c, &geminiResponse)
 	fullTextResponse.Model = info.UpstreamModelName
 	usage := buildUsageFromGeminiResponse(c, info, &geminiResponse)
+	service.RecordConversationResponse(c, info, geminiResponseContent(&geminiResponse))
 
 	fullTextResponse.Usage = usage
 
@@ -387,6 +389,22 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	return &usage, nil
+}
+
+func geminiResponseContent(response *dto.GeminiChatResponse) string {
+	if response == nil || len(response.Candidates) == 0 {
+		return ""
+	}
+
+	texts := make([]string, 0)
+	for _, candidate := range response.Candidates {
+		for _, part := range candidate.Content.Parts {
+			if part.Text != "" {
+				texts = append(texts, part.Text)
+			}
+		}
+	}
+	return strings.Join(texts, "\n")
 }
 
 func GeminiEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
